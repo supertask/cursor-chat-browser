@@ -5,6 +5,7 @@ import path from 'path'
 import { NextResponse } from 'next/server'
 import Database from 'better-sqlite3'
 import { resolveWorkspacePath } from '@/utils/workspace-path'
+import { getShadowDbPath } from '@/utils/db-manager'
 
 interface Project {
   id: string;
@@ -143,22 +144,78 @@ function determineProjectForConversation(
   return null
 }
 
+// Function to get allowed projects from config.json
+function getAllowedProjects(): string[] {
+  try {
+    const configPath = path.join(process.cwd(), 'config.json')
+    if (existsSync(configPath)) {
+      const config = JSON.parse(readFileSync(configPath, 'utf-8'))
+      return config.allowedProjects || []
+    }
+  } catch (error) {
+    console.error('Failed to read config.json:', error)
+  }
+  return [] // Return empty array if no config or error, which means show all projects
+}
+
 export async function GET() {
   try {
     const workspacePath = resolveWorkspacePath()
     const projects: Project[] = []
-    
+
+    // Get allowed projects from config
+    const allowedProjects = getAllowedProjects()
+    console.log(`Allowed projects from config: ${allowedProjects.join(', ')}`)
+
     // Get all workspace entries first
     const entries = await fs.readdir(workspacePath, { withFileTypes: true })
-    const workspaceEntries: Array<{name: string, workspaceJsonPath: string}> = []
-    
+    const allWorkspaceEntries: Array<{name: string, workspaceJsonPath: string}> = []
+
     for (const entry of entries) {
       if (entry.isDirectory()) {
         const workspaceJsonPath = path.join(workspacePath, entry.name, 'workspace.json')
         if (existsSync(workspaceJsonPath)) {
-          workspaceEntries.push({ name: entry.name, workspaceJsonPath })
+          allWorkspaceEntries.push({ name: entry.name, workspaceJsonPath })
         }
       }
+    }
+
+    // Filter workspace entries based on config
+    let workspaceEntries = allWorkspaceEntries
+    if (allowedProjects.length > 0) {
+      // Create a mapping of folder names to workspace IDs
+      const folderNameToWorkspaceId: Record<string, string> = {}
+      for (const entry of allWorkspaceEntries) {
+        try {
+          const workspaceData = JSON.parse(readFileSync(entry.workspaceJsonPath, 'utf-8'))
+          if (workspaceData.folder) {
+            const folderName = workspaceData.folder.split('/').pop() || workspaceData.folder.split('\\').pop()
+            if (folderName) {
+              folderNameToWorkspaceId[folderName] = entry.name
+            }
+          }
+        } catch (error) {
+          console.error(`Error reading workspace ${entry.name}:`, error)
+        }
+      }
+
+      // Filter entries to only include allowed projects
+      workspaceEntries = allWorkspaceEntries.filter(entry => {
+        try {
+          const workspaceData = JSON.parse(readFileSync(entry.workspaceJsonPath, 'utf-8'))
+          if (workspaceData.folder) {
+            const folderName = workspaceData.folder.split('/').pop() || workspaceData.folder.split('\\').pop()
+            return folderName && allowedProjects.includes(folderName)
+          }
+        } catch (error) {
+          console.error(`Error reading workspace ${entry.name}:`, error)
+        }
+        return false
+      })
+
+      console.log(`Filtered ${workspaceEntries.length} workspaces from ${allWorkspaceEntries.length} total (allowed: ${allowedProjects.join(', ')})`)
+    } else {
+      console.log(`No project filtering configured, showing all ${allWorkspaceEntries.length} workspaces`)
     }
     
     // Create project name to workspace ID mapping
@@ -167,12 +224,12 @@ export async function GET() {
     // Initialize conversation map - only count from global storage
     const conversationMap: Record<string, ConversationData[]> = {}
     
-    // Get conversations from global storage only
-    const globalDbPath = path.join(workspacePath, '..', 'globalStorage', 'state.vscdb')
-    
-    if (existsSync(globalDbPath)) {
+    // Get conversations from filtered database (or full database if no filtering)
+    const filteredDbPath = getShadowDbPath()
+
+    if (existsSync(filteredDbPath)) {
       try {
-        const globalDb = new Database(globalDbPath, { readonly: true })
+        const globalDb = new Database(filteredDbPath, { readonly: true })
         
         // Get all composerData entries (both old and new structure)
         const composerRows = globalDb.prepare("SELECT key, value FROM cursorDiskKV WHERE key LIKE 'composerData:%' AND LENGTH(value) > 10").all()

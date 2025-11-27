@@ -33,8 +33,10 @@ async function getWindowsUsername(): Promise<string> {
 export default function ConfigPage() {
   const router = useRouter()
   const [config, setConfig] = useState({
-    workspacePath: ''
+    workspacePath: '',
+    allowedProjects: [] as string[]
   })
+  const [newProject, setNewProject] = useState('')
   const [status, setStatus] = useState<{
     type: 'error' | 'success' | null;
     message: string;
@@ -44,8 +46,21 @@ export default function ConfigPage() {
     const initConfig = async () => {
       // Get stored path or detect environment
       const storedPath = localStorage.getItem('workspacePath')
+      let currentConfig = { workspacePath: storedPath || '', allowedProjects: [] as string[] }
+
+      // Load config.json if it exists
+      try {
+        const response = await fetch('/api/config')
+        if (response.ok) {
+          const configData = await response.json()
+          currentConfig.allowedProjects = configData.allowedProjects || []
+        }
+      } catch (error) {
+        console.error('Failed to load config:', error)
+      }
+
       if (storedPath) {
-        setConfig({ workspacePath: storedPath })
+        setConfig(currentConfig)
         return
       }
 
@@ -92,11 +107,28 @@ export default function ConfigPage() {
           console.error('Failed to validate detected path:', error)
         }
       }
-      setConfig({ workspacePath: detectedPath })
+      setConfig({ ...currentConfig, workspacePath: detectedPath })
     }
 
     initConfig()
   }, [router])
+
+  const addProject = () => {
+    if (newProject.trim() && !config.allowedProjects.includes(newProject.trim())) {
+      setConfig({
+        ...config,
+        allowedProjects: [...config.allowedProjects, newProject.trim()]
+      })
+      setNewProject('')
+    }
+  }
+
+  const removeProject = (project: string) => {
+    setConfig({
+      ...config,
+      allowedProjects: config.allowedProjects.filter(p => p !== project)
+    })
+  }
 
   const validateAndSave = async () => {
     try {
@@ -122,6 +154,17 @@ export default function ConfigPage() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({ path: expandedPath }),
+        })
+
+        // Save config.json
+        await fetch('/api/config', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            allowedProjects: config.allowedProjects
+          }),
         })
         
         setStatus({
@@ -156,7 +199,7 @@ export default function ConfigPage() {
           <label className="block text-sm font-medium mb-2">
             Cursor Workspace Path
           </label>
-          <Input 
+          <Input
             value={config.workspacePath}
             onChange={(e) => setConfig({ ...config, workspacePath: e.target.value })}
             placeholder="/path/to/cursor/workspaces"
@@ -164,6 +207,48 @@ export default function ConfigPage() {
           <p className="text-sm text-muted-foreground mt-1">
             Path to your Cursor workspace storage directory
           </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-2">
+            Allowed Projects (Optional)
+          </label>
+          <p className="text-sm text-muted-foreground mb-3">
+            Only show conversations from these projects. Leave empty to show all projects.
+          </p>
+
+          <div className="flex gap-2 mb-3">
+            <Input
+              value={newProject}
+              onChange={(e) => setNewProject(e.target.value)}
+              placeholder="Enter project name"
+              onKeyPress={(e) => e.key === 'Enter' && addProject()}
+            />
+            <Button onClick={addProject} variant="outline">
+              Add Project
+            </Button>
+          </div>
+
+          <div className="space-y-2">
+            {config.allowedProjects.map((project) => (
+              <div key={project} className="flex items-center justify-between p-2 bg-muted rounded">
+                <span className="text-sm">{project}</span>
+                <Button
+                  onClick={() => removeProject(project)}
+                  variant="ghost"
+                  size="sm"
+                  className="text-red-600 hover:text-red-700"
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+            {config.allowedProjects.length === 0 && (
+              <p className="text-sm text-muted-foreground italic">
+                No projects configured - all projects will be shown
+              </p>
+            )}
+          </div>
         </div>
 
         {status.type && (

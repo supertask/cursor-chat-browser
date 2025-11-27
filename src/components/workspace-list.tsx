@@ -52,7 +52,7 @@ export function WorkspaceList() {
   const projectsWithoutConversations = projects.filter(project => project.conversationCount === 0)
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 h-full overflow-auto">
       {/* Projects with conversations */}
       {projectsWithConversations.length > 0 && (
         <Card>
@@ -75,7 +75,7 @@ export function WorkspaceList() {
                 {projectsWithConversations.map((project) => (
                   <TableRow key={project.id} className="hover:bg-accent/50">
                     <TableCell>
-                      <Link 
+                      <Link
                         href={`/workspace/${project.id}`}
                         className="text-blue-600 hover:underline font-medium"
                       >
@@ -111,7 +111,7 @@ export function WorkspaceList() {
             <Alert className="mb-4">
               <Info className="h-4 w-4" />
               <AlertDescription>
-                These projects may appear empty due to folder relocation, Cursor updates, or conversations being stored in a different location. 
+                These projects may appear empty due to folder relocation, Cursor updates, or conversations being stored in a different location.
                 You can still click on a project to check if there are any legacy conversations available.
               </AlertDescription>
             </Alert>
@@ -127,7 +127,7 @@ export function WorkspaceList() {
                 {projectsWithoutConversations.map((project) => (
                   <TableRow key={project.id} className="hover:bg-accent/50">
                     <TableCell>
-                      <Link 
+                      <Link
                         href={`/workspace/${project.id}`}
                         className="text-blue-600 hover:underline font-medium"
                       >

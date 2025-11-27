@@ -14,12 +14,12 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.className} min-h-screen flex flex-col`}>
+    <html lang="en" suppressHydrationWarning className="h-full">
+      <body className={`${inter.className} min-h-full flex flex-col`}>
         <ThemeProvider defaultTheme="dark">
           <TooltipProvider>
             <Navbar />
-            <main className="container mx-auto py-4 flex-1">
+            <main className="container mx-auto py-4 flex-1 flex flex-col">
               {children}
             </main>
             <Footer />

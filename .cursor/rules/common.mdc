@@ -1,0 +1,6 @@
+﻿---
+alwaysApply: true
+---
+
+以下のルールかならずまもってください。
+1. AppData\Roaming\Cursor\ より下のディレクトリはCursorの中身なので書き込まないでください。
