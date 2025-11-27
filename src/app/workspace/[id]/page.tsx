@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from "@/components/ui/card"
-import { ArrowLeft, RefreshCw, ChevronDown, ChevronUp } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { ArrowLeft, RefreshCw, ChevronDown, ChevronUp, Search } from "lucide-react"
 import Link from "next/link"
 import { Loading } from "@/components/ui/loading"
 import { DownloadMenu } from "@/components/download-menu"
@@ -25,6 +26,7 @@ interface WorkspaceState {
   isLoading: boolean;
   isChatLoading: boolean;
   isRefreshing: boolean;
+  isSearching: boolean;
 }
 
 interface MessageBubbleProps {
@@ -157,6 +159,8 @@ const MessageGroup = ({ userBubble, aiBubbles, userMessageRef }: {
 
 export default function WorkspacePage({ params }: { params: { id: string } }) {
   const searchParams = useSearchParams()
+  const [searchQuery, setSearchQuery] = useState("")
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const [state, setState] = useState<WorkspaceState>({
     projectName: params.id === 'global' ? 'Global Storage' : `Project ${params.id.slice(0, 8)}`,
     tabs: [],
@@ -164,7 +168,8 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
     selectedId: searchParams.get('tab'),
     isLoading: true,
     isChatLoading: false,
-    isRefreshing: false
+    isRefreshing: false,
+    isSearching: false
   })
 
   const fetchChatDetails = async (tabId: string) => {
@@ -198,7 +203,15 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
     }
   }
 
-  const fetchWorkspace = useCallback(async () => {
+  // Initial fetch
+  const fetchWorkspace = useCallback(async (currentQuery?: string) => {
+    // If we have a search query, don't fetch all (preserve search results)
+    // Check ref directly or passed arg to be sure
+    const activeQuery = currentQuery ?? searchInputRef.current?.value ?? searchQuery
+    if (activeQuery && activeQuery.trim()) {
+        return
+    }
+
     try {
       const tabsRes = await fetch(`/api/workspaces/${params.id}/tabs?mode=list`)
       const data = await tabsRes.json()
@@ -247,12 +260,40 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
     fetchWorkspace()
   }, [fetchWorkspace])
 
+  // Select first tab if none selected (only if not searching, or if searching but valid)
   useEffect(() => {
     if (!state.selectedId && state.tabs.length > 0) {
+        // If searching, we might not want to auto-select, but for now let's keep it
         const firstId = state.tabs[0].id
         handleSelect(firstId)
     }
   }, [state.tabs, state.selectedId])
+
+  const handleSearch = async () => {
+    const query = searchInputRef.current?.value || ""
+    setSearchQuery(query)
+
+    if (!query.trim()) {
+      // If empty, reload all
+      fetchWorkspace(query)
+      return
+    }
+
+    try {
+      setState(prev => ({ ...prev, isSearching: true }))
+      const res = await fetch(`/api/workspaces/${params.id}/tabs?mode=list&q=${encodeURIComponent(query)}`)
+      const data = await res.json()
+      
+      setState(prev => ({
+        ...prev,
+        tabs: (data.tabs || []).sort((a: ChatTab, b: ChatTab) => b.timestamp - a.timestamp),
+        isSearching: false
+      }))
+    } catch (error) {
+      console.error('Failed to search:', error)
+      setState(prev => ({ ...prev, isSearching: false }))
+    }
+  }
 
   // Group bubbles Logic
   const selectedChat = state.tabs.find(tab => tab.id === state.selectedId)
@@ -396,7 +437,23 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
             </p>
           </div>
 
-          {state.tabs.length > 0 && (
+          <div className="flex gap-2 relative shrink-0">
+            <div className="relative flex-1">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                ref={searchInputRef}
+                placeholder="Search conversations..."
+                className="pl-8"
+                defaultValue={searchQuery}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              />
+            </div>
+            <Button onClick={handleSearch} disabled={state.isSearching} size="icon" variant="outline">
+              {state.isSearching ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+            </Button>
+          </div>
+
+          {state.tabs.length > 0 ? (
             <div className="flex flex-col min-h-0 overflow-hidden flex-1">
               <h2 className="text-lg font-bold shrink-0 mb-2">Conversations</h2>
               <div className="space-y-2 flex-1 overflow-y-auto pr-2 min-h-0">
@@ -420,6 +477,10 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
                 ))}
               </div>
             </div>
+          ) : (
+             <div className="text-center py-8 text-muted-foreground text-sm">
+                {state.isSearching ? 'Searching...' : 'No conversations found'}
+             </div>
           )}
         </div>
 
