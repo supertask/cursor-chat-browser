@@ -15,7 +15,6 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism'
 import { ChatTab, ComposerChat } from "@/types/workspace"
 import { Badge } from "@/components/ui/badge"
-import { CopyButton } from "@/components/copy-button"
 import { format } from 'date-fns'
 
 interface WorkspaceState {
@@ -422,8 +421,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
                 <RefreshCw className={`w-4 h-4 ${state.isRefreshing ? 'animate-spin' : ''}`} />
                 {state.isRefreshing ? 'Refreshing...' : 'Refresh DB'}
             </Button>
-            {selectedChat && <CopyButton tab={selectedChat} />}
-            {selectedChat && <DownloadMenu tab={selectedChat} />}
+            {selectedChat && <DownloadMenu tab={selectedChat} allTabs={state.tabs} workspaceId={params.id} />}
           </div>
         </div>
       </div>
