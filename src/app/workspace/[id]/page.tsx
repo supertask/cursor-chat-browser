@@ -89,24 +89,24 @@ const UserMessage = ({ bubble }: MessageBubbleProps) => {
         {!isExpanded && showToggle && (
            <div className="absolute bottom-0 left-0 w-full h-12 bg-gradient-to-t from-blue-50 to-transparent dark:from-blue-950/20 pointer-events-none" />
         )}
-      </div>
 
-      {showToggle && (
-        <div className="mt-2 flex justify-center">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="h-6 text-xs text-muted-foreground hover:text-foreground"
-          >
-            {isExpanded ? (
-              <>Show less <ChevronUp className="ml-1 w-3 h-3" /></>
-            ) : (
-              <>Show more <ChevronDown className="ml-1 w-3 h-3" /></>
-            )}
-          </Button>
-        </div>
-      )}
+        {showToggle && (
+          <div className="absolute bottom-0 right-0 z-10">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="h-6 text-xs text-muted-foreground hover:text-foreground bg-background/50 backdrop-blur-sm"
+            >
+              {isExpanded ? (
+                <>Show less <ChevronUp className="ml-1 w-3 h-3" /></>
+              ) : (
+                <>Show more <ChevronDown className="ml-1 w-3 h-3" /></>
+              )}
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -127,11 +127,18 @@ const AiMessage = ({ bubble }: MessageBubbleProps) => {
   )
 }
 
-const MessageGroup = ({ userBubble, aiBubbles }: { userBubble?: MessageBubbleProps['bubble'], aiBubbles: MessageBubbleProps['bubble'][] }) => {
+const MessageGroup = ({ userBubble, aiBubbles, userMessageRef }: { 
+  userBubble?: MessageBubbleProps['bubble'], 
+  aiBubbles: MessageBubbleProps['bubble'][],
+  userMessageRef?: (el: HTMLDivElement | null) => void
+}) => {
   return (
-    <div className="relative isolate group-section">
+    <div 
+      className="relative isolate group-section scroll-mt-4"
+      ref={userMessageRef}
+    >
       {userBubble && (
-        <div className="sticky top-0 z-10 shadow-sm">
+        <div className="sticky top-0 z-10 shadow-sm bg-background">
           {/* User message is now sticky. We use the UserMessage component which handles background and styling. */}
           <UserMessage bubble={userBubble} />
         </div>
@@ -276,6 +283,77 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
   }, [selectedChat?.bubbles])
 
 
+  const messageRefs = useRef<(HTMLDivElement | null)[]>([])
+
+  const scrollToMessage = useCallback((direction: 'prev' | 'next') => {
+    // Filter out null/undefined refs
+    const refs = messageRefs.current.filter(r => !!r) as HTMLDivElement[]
+    
+    if (refs.length === 0) {
+        console.log('No refs found')
+        return
+    }
+
+    // Offset for sticky header logic
+    const OFFSET = 100
+
+    // Find the first element that is strictly below the OFFSET line
+    // rect.top is relative to viewport
+    const nextIndex = refs.findIndex(el => {
+        const rect = el.getBoundingClientRect()
+        return rect.top > OFFSET + 10 
+    })
+
+    console.log('Scroll debug:', { direction, nextIndex, total: refs.length })
+
+    let targetIndex = -1
+
+    if (direction === 'next') {
+        if (nextIndex !== -1) {
+            targetIndex = nextIndex
+        } else {
+            // If nextIndex is -1, it means all elements are above the offset line.
+            // We are at the end. No next element.
+        }
+    } else {
+        // PREV
+        // If nextIndex is -1, all elements are above. "Current" is the last one.
+        // If nextIndex is 0, all elements are below. We are before the first one.
+        // If nextIndex is k, then k-1 is the current one (at or above offset).
+        
+        let currentIndex
+        if (nextIndex === -1) {
+            currentIndex = refs.length - 1
+        } else {
+            currentIndex = nextIndex - 1
+        }
+
+        if (currentIndex >= 0) {
+            // We want to go to the previous one.
+            targetIndex = currentIndex - 1
+            
+            // Edge case: If we are scrolling in the middle of a very long message,
+            // strictly speaking "Previous" could mean "Top of current message".
+            // But let's stick to "Previous message block" for now as requested.
+            // If targetIndex becomes -1, we simply don't scroll (already at first).
+        }
+    }
+
+    if (targetIndex >= 0 && targetIndex < refs.length) {
+      const targetEl = refs[targetIndex]
+      const rect = targetEl.getBoundingClientRect()
+      const scrollTop = window.scrollY + rect.top - 16 // 16px margin from top
+      
+      window.scrollTo({
+        top: scrollTop,
+        behavior: 'smooth'
+      })
+    }
+  }, [])
+
+  // Reset refs on re-render to avoid stale refs or gaps
+  messageRefs.current = []
+
   if (state.isLoading) {
     return <Loading />
   }
@@ -347,8 +425,8 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
 
         <div className="flex-1 min-w-0">
           {selectedChat ? (
-            <Card className="p-0 overflow-hidden">
-              <div className="p-4 border-b bg-card">
+            <Card className="p-0">
+              <div className="p-4 border-b bg-card rounded-t-xl">
                 <div className="flex items-center justify-between">
                     <h2 className="text-xl font-bold truncate pr-4">
                     {selectedChat.title}
@@ -359,7 +437,7 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
                 </div>
               </div>
 
-              <div className="bg-card min-h-[500px]">
+              <div className="bg-card min-h-[500px] rounded-b-xl">
                 {state.isChatLoading && (!selectedChat.bubbles || selectedChat.bubbles.length === 0) ? (
                     <div className="flex justify-center items-center py-12">
                         <Loading message="Loading chat details..." />
@@ -371,6 +449,9 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
                                 key={index} 
                                 userBubble={group.userBubble} 
                                 aiBubbles={group.aiBubbles} 
+                                userMessageRef={(el) => {
+                                    if (el) messageRefs.current[index] = el
+                                }}
                             />
                         ))}
                     </div>
@@ -385,6 +466,27 @@ export default function WorkspacePage({ params }: { params: { id: string } }) {
             </Card>
           )}
         </div>
+      </div>
+
+      <div className="fixed bottom-8 right-8 flex flex-col gap-2 z-50">
+        <Button
+          variant="secondary"
+          size="icon"
+          className="rounded-full shadow-lg opacity-70 hover:opacity-100 transition-opacity"
+          onClick={() => scrollToMessage('prev')}
+          title="Previous You message"
+        >
+          <ChevronUp className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="secondary"
+          size="icon"
+          className="rounded-full shadow-lg opacity-70 hover:opacity-100 transition-opacity"
+          onClick={() => scrollToMessage('next')}
+          title="Next You message"
+        >
+          <ChevronDown className="h-4 w-4" />
+        </Button>
       </div>
     </div>
   )
